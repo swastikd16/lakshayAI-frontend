@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useState } from "react";
 import { get } from "../lib/apiClient";
 import { useAuth } from "../contexts/AuthContext";
 import StudyShell from "../components/StudyShell";
@@ -22,6 +22,7 @@ type ReviewOption = {
 
 type ReviewQuestion = {
   number?: string | null;
+  subject?: string | null;
   topic?: string | null;
   status?: "incorrect" | "correct" | string | null;
   timeSpent?: string | null;
@@ -38,6 +39,7 @@ type ReviewSession = {
   id?: string | null;
   module?: string | null;
   topic?: string | null;
+  subject?: string | null;
   scorePercent?: number | null;
   accuracyPercent?: number | null;
   timeSpentSec?: number | null;
@@ -170,6 +172,7 @@ export default function AdaptiveReviewPage() {
 
       return {
         number: item.number ?? String(index + 1).padStart(2, "0"),
+        subject: item.subject ?? null,
         topic: item.topic ?? "Concept",
         status: item.status ?? "incorrect",
         timeSpent:
@@ -224,6 +227,31 @@ export default function AdaptiveReviewPage() {
     return viewModel.questions;
   }, [activeFilter, viewModel.questions]);
 
+  const retryPracticeHref = useMemo(() => {
+    const session = review?.session ?? null;
+    const questions = review?.questions ?? [];
+    const incorrect = questions.filter((item) => (item.status ?? "").toLowerCase() === "incorrect");
+    const seed = incorrect[0] ?? questions[0] ?? null;
+
+    const topic = session?.topic?.trim() || seed?.topic?.trim() || "";
+    const subject = session?.subject?.trim() || seed?.subject?.trim() || "";
+
+    const params = new URLSearchParams();
+    if (topic) params.set("topic", topic);
+    if (subject) params.set("subject", subject);
+
+    const query = params.toString();
+    return query ? `#/adaptive-practice?${query}` : "#/adaptive-practice";
+  }, [review]);
+
+  const handleRetrySimilarQuestions = useCallback(() => {
+    window.location.hash = retryPracticeHref;
+  }, [retryPracticeHref]);
+
+  const handleReviseWeakTopics = useCallback(() => {
+    window.location.hash = "#/doubt-solver";
+  }, []);
+
   return (
     <StudyShell activePage="adaptive-review">
       <main className="min-h-screen pb-24 md:ml-64 md:pb-12">
@@ -242,6 +270,7 @@ export default function AdaptiveReviewPage() {
             <div className="flex flex-wrap gap-4">
               <button
                 type="button"
+                onClick={handleRetrySimilarQuestions}
                 className="rounded-xl border border-slate-100 bg-white px-6 py-3 text-sm font-bold text-primary shadow-sm transition-colors hover:bg-slate-50"
               >
                 Retry Similar Questions
@@ -312,7 +341,11 @@ export default function AdaptiveReviewPage() {
                       <button type="button" className="rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-primary-container">
                         {viewModel.recommendation?.ctaLabel ?? "No data available"}
                       </button>
-                      <button type="button" className="rounded-xl border border-secondary/20 bg-white px-5 py-3 text-sm font-semibold text-secondary transition-colors hover:bg-secondary/5">
+                      <button
+                        type="button"
+                        onClick={handleReviseWeakTopics}
+                        className="rounded-xl border border-secondary/20 bg-white px-5 py-3 text-sm font-semibold text-secondary transition-colors hover:bg-secondary/5"
+                      >
                         Revise Weak Topics
                       </button>
                     </div>

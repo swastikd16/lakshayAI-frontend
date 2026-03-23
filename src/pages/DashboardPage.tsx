@@ -67,7 +67,11 @@ function LoadingCard() {
   return <div className="h-32 animate-pulse rounded-2xl bg-surface-container-lowest" />;
 }
 
-export default function DashboardPage() {
+export default function DashboardPage({
+  onCompleteOnboarding
+}: {
+  onCompleteOnboarding: () => void;
+}) {
   const { accessToken, user } = useAuth();
   const [summary, setSummary] = useState<DashboardSummaryDto | null>(null);
   const [loading, setLoading] = useState(true);
@@ -151,6 +155,14 @@ export default function DashboardPage() {
           </div>
 
           <div className="flex flex-wrap gap-4">
+            <button
+              type="button"
+              onClick={onCompleteOnboarding}
+              className="inline-flex items-center gap-2 rounded-xl border border-secondary/20 bg-white px-5 py-3 text-sm font-bold text-secondary shadow-sm transition-all hover:-translate-y-0.5 hover:border-secondary/40 hover:bg-secondary/5"
+            >
+              <span className="material-symbols-outlined text-[18px]">checklist</span>
+              Complete onboarding
+            </button>
             <div className="flex items-center gap-3 rounded-xl bg-white p-3 shadow-sm">
               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-orange-100 text-orange-600">
                 <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>

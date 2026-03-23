@@ -36,6 +36,11 @@ function getApiError(payload: unknown, fallbackMessage: string): ApiError {
   return { message: fallbackMessage };
 }
 
+type ApiEnvelope<T> = {
+  data: T;
+  meta?: Record<string, unknown>;
+};
+
 async function request<T>(
   path: string,
   init: RequestInit = {},
@@ -74,12 +79,64 @@ async function request<T>(
   return payload as T;
 }
 
+async function requestWithMeta<T>(
+  path: string,
+  init: RequestInit = {},
+  accessToken?: string | null
+): Promise<ApiEnvelope<T>> {
+  const response = await fetch(buildUrl(path), {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...(init.headers ?? {}),
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {})
+    }
+  });
+
+  let payload: unknown = null;
+  const contentType = response.headers.get("content-type") ?? "";
+
+  if (contentType.includes("application/json")) {
+    payload = await response.json();
+  } else {
+    payload = await response.text();
+  }
+
+  if (!response.ok) {
+    throw new Error(getApiError(payload, `Request failed with status ${response.status}`).message);
+  }
+
+  if (isRecord(payload) && "error" in payload && payload.error) {
+    throw new Error(getApiError(payload, "The server returned an error.").message);
+  }
+
+  if (isRecord(payload) && "data" in payload) {
+    return {
+      data: payload.data as T,
+      meta: isRecord(payload.meta) ? (payload.meta as Record<string, unknown>) : undefined
+    };
+  }
+
+  return { data: payload as T };
+}
+
 export function get<T>(path: string, accessToken?: string | null) {
   return request<T>(path, { method: "GET" }, accessToken);
 }
 
 export function post<T, B = unknown>(path: string, body?: B, accessToken?: string | null) {
   return request<T>(
+    path,
+    {
+      method: "POST",
+      body: body === undefined ? undefined : JSON.stringify(body)
+    },
+    accessToken
+  );
+}
+
+export function postWithMeta<T, B = unknown>(path: string, body?: B, accessToken?: string | null) {
+  return requestWithMeta<T>(
     path,
     {
       method: "POST",

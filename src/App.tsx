@@ -18,7 +18,10 @@ type RouteState =
       mode: AuthMode;
     }
   | { page: "dashboard" }
-  | { page: "onboarding" }
+  | {
+      page: "onboarding";
+      revisit?: boolean;
+    }
   | { page: "planner" }
   | { page: "adaptive-practice" }
   | { page: "adaptive-review" }
@@ -76,6 +79,10 @@ function parseHash(hash: string): RouteState {
 
   if (normalizedHash.startsWith("#/profile")) {
     return { page: "profile" };
+  }
+
+  if (normalizedHash.startsWith("#/onboarding/revisit")) {
+    return { page: "onboarding", revisit: true };
   }
 
   if (normalizedHash.startsWith("#/onboarding")) {
@@ -1121,6 +1128,7 @@ export default function App() {
 
   const hasSession = Boolean(accessToken);
   const hasOnboarded = Boolean(user?.targetExam);
+  const onboardingRevisit = route.page === "onboarding" ? Boolean(route.revisit) : false;
   const isProtectedRoute =
     route.page === "onboarding" ||
     route.page === "dashboard" ||
@@ -1156,10 +1164,10 @@ export default function App() {
       return;
     }
 
-    if (hasSession && hasOnboarded && route.page === "onboarding") {
+    if (hasSession && hasOnboarded && route.page === "onboarding" && !onboardingRevisit) {
       window.location.hash = "#/dashboard";
     }
-  }, [authStatus, hasOnboarded, hasSession, isProtectedRoute, route.page]);
+  }, [authStatus, hasOnboarded, hasSession, isProtectedRoute, onboardingRevisit, route.page]);
 
   const navigateToAuth = (mode: AuthMode) => {
     window.location.hash = `#/auth/${mode}`;
@@ -1171,6 +1179,10 @@ export default function App() {
 
   const navigateToOnboarding = () => {
     window.location.hash = "#/onboarding";
+  };
+
+  const navigateToOnboardingRevisit = () => {
+    window.location.hash = "#/onboarding/revisit";
   };
 
   const navigateToPlanner = () => {
@@ -1202,11 +1214,16 @@ export default function App() {
   }
 
   if (route.page === "onboarding") {
-    return <OnboardingPage onContinue={navigateToPlanner} />;
+    return (
+      <OnboardingPage
+        onContinue={route.revisit ? () => (window.location.hash = "#/dashboard") : navigateToPlanner}
+        revisitMode={Boolean(route.revisit)}
+      />
+    );
   }
 
   if (route.page === "dashboard") {
-    return <DashboardPage />;
+    return <DashboardPage onCompleteOnboarding={navigateToOnboardingRevisit} />;
   }
 
   if (route.page === "planner") {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { get, post } from "../lib/apiClient";
 import { useAuth } from "../contexts/AuthContext";
 import StudyShell from "../components/StudyShell";
@@ -27,6 +27,8 @@ type PlannerWeakTopic = {
   severity?: string;
   copy?: string;
   score?: number;
+  riskLevel?: string;
+  retentionEstimate?: number;
 };
 
 type PlannerWeekDto = {
@@ -36,6 +38,34 @@ type PlannerWeekDto = {
   items?: PlannerItem[];
   weakTopics?: PlannerWeakTopic[];
   focusMessage?: string;
+  plannerSource?: "llm" | "fallback";
+  usedFallback?: boolean;
+};
+
+type PlannerView = "week" | "month";
+
+type PlannerCalendarDay = {
+  date: string;
+  weekday: string;
+  monthLabel: string;
+  inCurrentMonth: boolean;
+  active?: boolean;
+  items: PlannerItem[];
+};
+
+type PlannerCalendarDto = {
+  weekStartDate?: string;
+  weekLabel?: string;
+  monthStartDate?: string;
+  monthLabel?: string;
+  calendarLabel?: string;
+  weekDays?: PlannerWeekDay[];
+  days?: PlannerCalendarDay[];
+  items?: PlannerItem[];
+  weakTopics?: PlannerWeakTopic[];
+  focusMessage?: string;
+  plannerSource?: "llm" | "fallback";
+  usedFallback?: boolean;
 };
 
 function getWeekStart(date = new Date()) {
@@ -48,7 +78,10 @@ function getWeekStart(date = new Date()) {
 }
 
 function toIsoDate(date: Date) {
-  return date.toISOString().slice(0, 10);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function formatDateLabel(date: Date) {
@@ -116,88 +149,267 @@ function getPlannerTone(type?: string) {
   };
 }
 
-function getRandomLane(dayIndex: number) {
-  return Math.min(6, Math.max(0, dayIndex));
-}
-
 function buildPlanBlocks(items: PlannerItem[], weekStart: Date) {
-  return items
-    .map((item, index) => {
-      const startDate = item.startsAt ? new Date(item.startsAt) : null;
-      const endDate = item.endsAt ? new Date(item.endsAt) : null;
-      if (!startDate || Number.isNaN(startDate.getTime())) {
-        return null;
-      }
-
-      const dayIndex = Math.max(0, Math.min(6, Math.floor((startDate.getTime() - weekStart.getTime()) / (24 * 60 * 60 * 1000))));
-      const startMinutes = startDate.getHours() * 60 + startDate.getMinutes();
-      const endMinutes = endDate && !Number.isNaN(endDate.getTime()) ? endDate.getHours() * 60 + endDate.getMinutes() : startMinutes + 60;
-      const rowStart = Math.max(1, Math.round((startMinutes - 480) / 60) + 1);
-      const duration = Math.max(1, Math.round(Math.max(30, endMinutes - startMinutes) / 60));
-      const gridDay = getRandomLane(dayIndex) + 1;
-      const tone = getPlannerTone(item.type);
-
-      return {
-        id: item.id ?? `${item.subject}-${index}`,
-        dayIndex,
-        gridDay,
-        rowStart: Math.max(1, Math.min(10, rowStart)),
-        rowSpan: Math.min(3, duration),
-        subject: item.subject ?? "Study",
-        topic: item.topic ?? "Untitled block",
-        notes: item.notes ?? item.source ?? "Scheduled by backend",
-        tone
-      };
-    })
-    .filter(Boolean) as Array<{
+  type DraftBlock = {
     id: string;
     dayIndex: number;
-    gridDay: number;
     rowStart: number;
     rowSpan: number;
     subject: string;
     topic: string;
     notes: string;
     tone: ReturnType<typeof getPlannerTone>;
-  }>;
+    startTs: number;
+    endTs: number;
+    lane: number;
+    totalLanes: number;
+  };
+
+  const dayBuckets = new Map<number, DraftBlock[]>();
+
+  items.forEach((item, index) => {
+    const startDate = item.startsAt ? new Date(item.startsAt) : null;
+    const endDate = item.endsAt ? new Date(item.endsAt) : null;
+    if (!startDate || Number.isNaN(startDate.getTime())) return;
+
+    const endSafe =
+      endDate && !Number.isNaN(endDate.getTime()) && endDate.getTime() > startDate.getTime()
+        ? endDate
+        : new Date(startDate.getTime() + 60 * 60 * 1000);
+
+    const dayIndex = Math.max(0, Math.min(6, Math.floor((startDate.getTime() - weekStart.getTime()) / (24 * 60 * 60 * 1000))));
+    const startMinutes = startDate.getHours() * 60 + startDate.getMinutes();
+    const endMinutes = endSafe.getHours() * 60 + endSafe.getMinutes();
+    const rowStart = Math.max(1, Math.round((startMinutes - 480) / 60) + 1);
+    const duration = Math.max(1, Math.round(Math.max(30, endMinutes - startMinutes) / 60));
+    const tone = getPlannerTone(item.type);
+
+    const block: DraftBlock = {
+      id: item.id ?? `${item.subject}-${index}`,
+      dayIndex,
+      rowStart: Math.max(1, Math.min(10, rowStart)),
+      rowSpan: Math.min(3, duration),
+      subject: item.subject ?? "Study",
+      topic: item.topic ?? "Untitled block",
+      notes: item.notes ?? item.source ?? "Scheduled by backend",
+      tone,
+      startTs: startDate.getTime(),
+      endTs: endSafe.getTime(),
+      lane: 0,
+      totalLanes: 1
+    };
+
+    const dayList = dayBuckets.get(dayIndex) ?? [];
+    dayList.push(block);
+    dayBuckets.set(dayIndex, dayList);
+  });
+
+  const finalBlocks: DraftBlock[] = [];
+
+  dayBuckets.forEach((dayList) => {
+    dayList.sort((a, b) => a.startTs - b.startTs);
+    const laneEnd: number[] = [];
+    let maxLanes = 1;
+
+    dayList.forEach((block) => {
+      let laneIndex = laneEnd.findIndex((end) => block.startTs >= end);
+      if (laneIndex === -1) {
+        laneEnd.push(-Infinity);
+        laneIndex = laneEnd.length - 1;
+      }
+      laneEnd[laneIndex] = block.endTs;
+      maxLanes = Math.max(maxLanes, laneEnd.length);
+      block.lane = laneIndex;
+    });
+
+    dayList.forEach((block) => {
+      block.totalLanes = maxLanes;
+      finalBlocks.push(block);
+    });
+  });
+
+  return finalBlocks.sort((a, b) => a.startTs - b.startTs);
+}
+
+function getMonthStart(date = new Date()) {
+  return new Date(date.getFullYear(), date.getMonth(), 1, 0, 0, 0, 0);
+}
+
+function getViewStart(view: PlannerView, anchor: Date) {
+  return view === "week" ? getWeekStart(anchor) : getMonthStart(anchor);
+}
+
+function getViewEnd(view: PlannerView, start: Date) {
+  if (view === "month") {
+    return new Date(start.getFullYear(), start.getMonth() + 1, 0, 23, 59, 59, 999);
+  }
+
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  end.setHours(23, 59, 59, 999);
+  return end;
+}
+
+function formatMonthLabel(date: Date) {
+  return date.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+}
+
+function toDayKey(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function formatTimeRange(startAt?: string, endAt?: string) {
+  const startMinutes = toMinutes(startAt);
+  if (startMinutes === null) {
+    return "";
+  }
+
+  const endMinutes = toMinutes(endAt);
+  if (endMinutes === null) {
+    return hourLabel(startMinutes);
+  }
+
+  return `${hourLabel(startMinutes)} - ${hourLabel(endMinutes)}`;
+}
+
+function filterItemsForView(items: PlannerItem[], start: Date, end: Date) {
+  return items.filter((item) => {
+    if (!item.startsAt) return false;
+    const date = new Date(item.startsAt);
+    if (Number.isNaN(date.getTime())) return false;
+    return date.getTime() >= start.getTime() && date.getTime() <= end.getTime();
+  });
+}
+
+function buildMonthCells(monthStart: Date, items: PlannerItem[]): PlannerCalendarDay[] {
+  const firstOfMonth = new Date(monthStart.getFullYear(), monthStart.getMonth(), 1, 0, 0, 0, 0);
+  const mondayOffset = firstOfMonth.getDay() === 0 ? -6 : 1 - firstOfMonth.getDay();
+  const gridStart = new Date(firstOfMonth);
+  gridStart.setDate(firstOfMonth.getDate() + mondayOffset);
+
+  const itemBuckets = new Map<string, PlannerItem[]>();
+  items.forEach((item) => {
+    if (!item.startsAt) return;
+    const itemDate = new Date(item.startsAt);
+    if (Number.isNaN(itemDate.getTime())) return;
+    const key = toDayKey(itemDate);
+    const dayList = itemBuckets.get(key) ?? [];
+    dayList.push(item);
+    itemBuckets.set(key, dayList);
+  });
+
+  return Array.from({ length: 42 }, (_, index) => {
+    const date = new Date(gridStart);
+    date.setDate(gridStart.getDate() + index);
+    const key = toDayKey(date);
+    const today = new Date();
+
+    return {
+      date: String(date.getDate()),
+      weekday: date.toLocaleDateString("en-US", { weekday: "short" }),
+      monthLabel: date.toLocaleDateString("en-US", { month: "short" }),
+      inCurrentMonth: date.getMonth() === monthStart.getMonth() && date.getFullYear() === monthStart.getFullYear(),
+      active:
+        date.getFullYear() === today.getFullYear() &&
+        date.getMonth() === today.getMonth() &&
+        date.getDate() === today.getDate(),
+      items: itemBuckets.get(key) ?? []
+    };
+  });
 }
 
 export default function StudyPlannerPage() {
   const { accessToken } = useAuth();
-  const [week, setWeek] = useState<PlannerWeekDto | null>(null);
+  const [calendar, setCalendar] = useState<PlannerCalendarDto | null>(null);
+  const [view, setView] = useState<PlannerView>("week");
+  const [anchorDate, setAnchorDate] = useState(() => new Date());
   const [loading, setLoading] = useState(true);
   const [regenerating, setRegenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const weekStart = useMemo(() => getWeekStart(), []);
+  const requestIdRef = useRef(0);
 
-  const loadWeek = async () => {
-    if (!accessToken) {
-      setLoading(false);
-      setError("Sign in to load your study plan.");
-      return;
-    }
+  const periodStart = useMemo(() => getViewStart(view, anchorDate), [view, anchorDate]);
+  const periodEnd = useMemo(() => getViewEnd(view, periodStart), [view, periodStart]);
+  const timeLabels = useMemo(() => getTimeLabels(), []);
+  const calendarItems = useMemo(
+    () => filterItemsForView(calendar?.items ?? [], periodStart, periodEnd),
+    [calendar, periodEnd, periodStart]
+  );
+  const weekDays = useMemo(
+    () => (view === "week" ? (calendar?.weekDays?.length ? calendar.weekDays : buildWeekDays(periodStart)) : []),
+    [calendar, periodStart, view]
+  );
+  const planBlocks = useMemo(
+    () => (view === "week" ? buildPlanBlocks(calendarItems, periodStart) : []),
+    [calendarItems, periodStart, view]
+  );
+  const monthCells = useMemo(
+    () =>
+      view === "month"
+        ? (calendar?.days?.length ? calendar.days : buildMonthCells(periodStart, calendarItems))
+        : [],
+    [calendar, calendarItems, periodStart, view]
+  );
+  const weakTopics = calendar?.weakTopics ?? [];
+  const focusMessage = calendar?.focusMessage ?? "Generate your plan to see AI rebalance reasoning.";
+  const usedFallback = calendar?.usedFallback ?? false;
+  const plannerSource = calendar?.plannerSource ?? null;
+  const periodLabel =
+    calendar?.calendarLabel ??
+    (view === "week"
+      ? calendar?.weekLabel ?? `${formatDateLabel(periodStart)} - ${formatDateLabel(periodEnd)}`
+      : calendar?.monthLabel ?? formatMonthLabel(periodStart));
 
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await get<PlannerWeekDto>(`/planner/week?start=${toIsoDate(weekStart)}`, accessToken);
-      setWeek(data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to load your study plan.");
-    } finally {
-      setLoading(false);
-    }
-  };
+  const loadCalendar = useCallback(
+    async (nextView: PlannerView, nextAnchor: Date) => {
+      if (!accessToken) {
+        setCalendar(null);
+        setLoading(false);
+        setError("Sign in to load your study plan.");
+        return;
+      }
+
+      const requestId = ++requestIdRef.current;
+      const start = getViewStart(nextView, nextAnchor);
+
+      setLoading(true);
+      setError(null);
+
+      try {
+        const data = await get<PlannerCalendarDto>(`/planner/calendar?view=${nextView}&start=${toIsoDate(start)}`, accessToken);
+        if (requestId !== requestIdRef.current) return;
+        setCalendar(data);
+      } catch (err) {
+        if (requestId !== requestIdRef.current) return;
+        setError(err instanceof Error ? err.message : "Unable to load your study plan.");
+      } finally {
+        if (requestId === requestIdRef.current) {
+          setLoading(false);
+        }
+      }
+    },
+    [accessToken]
+  );
 
   useEffect(() => {
-    void loadWeek();
-  }, [accessToken]);
+    void loadCalendar(view, anchorDate);
+  }, [anchorDate, loadCalendar, view]);
 
-  const weekDays = week?.weekDays?.length ? week.weekDays : buildWeekDays(weekStart);
-  const planBlocks = useMemo(() => buildPlanBlocks(week?.items ?? [], weekStart), [week, weekStart]);
-  const timeLabels = useMemo(() => getTimeLabels(), []);
-  const weakTopics = week?.weakTopics ?? [];
-  const focusMessage = week?.focusMessage ?? "No data available.";
+  const handleShift = (direction: -1 | 1) => {
+    setAnchorDate((current) => {
+      if (view === "month") {
+        return new Date(current.getFullYear(), current.getMonth() + direction, 1);
+      }
+
+      const next = new Date(current);
+      next.setDate(next.getDate() + direction * 7);
+      return next;
+    });
+  };
+
+  const handleChangeView = (nextView: PlannerView) => {
+    setView(nextView);
+  };
 
   const handleRegenerate = async () => {
     if (!accessToken) {
@@ -208,8 +420,8 @@ export default function StudyPlannerPage() {
     setRegenerating(true);
     setError(null);
     try {
-      await post("/planner/regenerate", { start: toIsoDate(weekStart) }, accessToken);
-      await loadWeek();
+      await post("/planner/regenerate", { view, start: toIsoDate(periodStart) }, accessToken);
+      await loadCalendar(view, anchorDate);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to regenerate plan.");
     } finally {
@@ -241,7 +453,11 @@ export default function StudyPlannerPage() {
               <span className="material-symbols-outlined text-lg">tune</span>
               Edit Hours
             </button>
-            <button className="flex flex-shrink-0 items-center gap-2 rounded-xl border border-outline-variant/20 bg-white px-4 py-2 text-sm font-bold text-primary shadow-sm transition-colors hover:bg-surface-container">
+            <button
+              onClick={handleRegenerate}
+              disabled={regenerating}
+              className="flex flex-shrink-0 items-center gap-2 rounded-xl border border-outline-variant/20 bg-white px-4 py-2 text-sm font-bold text-primary shadow-sm transition-colors hover:bg-surface-container disabled:opacity-60"
+            >
               <span className="material-symbols-outlined text-lg text-secondary">bolt</span>
               Optimize
             </button>
@@ -262,24 +478,52 @@ export default function StudyPlannerPage() {
           </div>
         ) : null}
 
+        {usedFallback ? (
+          <div className="mx-6 mb-2 flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-xs font-semibold text-amber-700 md:mx-12">
+            <span className="material-symbols-outlined text-base text-amber-500">info</span>
+            used default plan &mdash; planner fallback is active for this week.
+          </div>
+        ) : plannerSource === "llm" ? (
+          <div className="mx-6 mb-2 flex items-center gap-2 rounded-xl border border-secondary/10 bg-secondary/5 px-4 py-2 text-xs font-semibold text-secondary md:mx-12">
+            <span className="material-symbols-outlined text-base">auto_awesome</span>
+            AI-powered plan &mdash; generated by planner agent
+          </div>
+        ) : null}
+
         <div className="grid grid-cols-1 items-start gap-8 px-6 md:px-12 xl:grid-cols-12">
           <div className="space-y-6 xl:col-span-8">
             <div className="flex items-center justify-between rounded-2xl border border-outline-variant/5 bg-surface-container-lowest p-2 shadow-[0_4px_20px_rgba(0,32,69,0.02)]">
-              <button className="rounded-lg p-2 transition-colors hover:bg-surface-container">
+              <button onClick={() => handleShift(-1)} className="rounded-lg p-2 transition-colors hover:bg-surface-container">
                 <span className="material-symbols-outlined text-slate-400">chevron_left</span>
               </button>
               <div className="flex items-center gap-2 md:gap-4">
-                <button className="rounded-lg border border-secondary/10 bg-secondary/5 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-secondary">
+                <button
+                  type="button"
+                  onClick={() => handleChangeView("week")}
+                  className={`rounded-lg border px-3 py-1 text-[10px] font-bold uppercase tracking-wider transition-colors ${
+                    view === "week"
+                      ? "border-secondary/10 bg-secondary/5 text-secondary"
+                      : "border-transparent text-slate-400 hover:bg-surface-container hover:text-primary"
+                  }`}
+                >
                   Weekly
                 </button>
-                <button className="rounded-lg px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 transition-colors hover:text-primary">
+                <button
+                  type="button"
+                  onClick={() => handleChangeView("month")}
+                  className={`rounded-lg border px-3 py-1 text-[10px] font-bold uppercase tracking-wider transition-colors ${
+                    view === "month"
+                      ? "border-secondary/10 bg-secondary/5 text-secondary"
+                      : "border-transparent text-slate-400 hover:bg-surface-container hover:text-primary"
+                  }`}
+                >
                   Monthly
                 </button>
               </div>
               <span className="font-headline text-sm font-bold text-primary md:text-base">
-                {week?.weekLabel ?? `${formatDateLabel(weekStart)} - ${formatDateLabel(new Date(weekStart.getTime() + 6 * 24 * 60 * 60 * 1000))}`}
+                {periodLabel}
               </span>
-              <button className="rounded-lg p-2 transition-colors hover:bg-surface-container">
+              <button onClick={() => handleShift(1)} className="rounded-lg p-2 transition-colors hover:bg-surface-container">
                 <span className="material-symbols-outlined text-slate-400">chevron_right</span>
               </button>
             </div>
@@ -290,65 +534,144 @@ export default function StudyPlannerPage() {
               </div>
             ) : (
               <div className="overflow-hidden rounded-3xl border border-outline-variant/10 bg-surface-container-lowest shadow-[0_8px_32px_rgba(0,32,69,0.03)]">
-                <div className="grid grid-cols-8 border-b border-outline-variant/10 bg-surface-container-low/30">
-                  <div className="border-r border-outline-variant/10 p-4" />
-                  {weekDays.map((day) => (
-                    <div
-                      key={`${day.day}-${day.date}`}
-                      className={`border-r border-outline-variant/10 p-4 text-center last:border-r-0 ${day.active ? "bg-secondary/5" : ""}`}
-                    >
-                      <p className={`text-[9px] font-bold uppercase ${day.active ? "text-secondary" : "text-slate-400"}`}>
-                        {day.day}
-                      </p>
-                      <p className={`font-headline text-base font-black ${day.active ? "text-secondary" : "text-primary"}`}>
-                        {day.date}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="relative h-[500px] overflow-y-auto bg-white custom-scrollbar">
-                  <div className="grid h-[800px] grid-cols-8">
-                    <div className="sticky left-0 z-10 col-span-1 border-r border-outline-variant/5 bg-surface-container-lowest">
-                      {timeLabels.map((time) => (
-                        <div key={time} className="h-20 border-b border-outline-variant/5 px-2 py-1 text-right text-[9px] font-bold text-slate-400">
-                          {time}
+                {view === "week" ? (
+                  <>
+                    <div className="grid grid-cols-8 border-b border-outline-variant/10 bg-surface-container-low/30">
+                      <div className="border-r border-outline-variant/10 p-4" />
+                      {weekDays.map((day) => (
+                        <div
+                          key={`${day.day}-${day.date}`}
+                          className={`border-r border-outline-variant/10 p-4 text-center last:border-r-0 ${day.active ? "bg-secondary/5" : ""}`}
+                        >
+                          <p className={`text-[9px] font-bold uppercase ${day.active ? "text-secondary" : "text-slate-400"}`}>
+                            {day.day}
+                          </p>
+                          <p className={`font-headline text-base font-black ${day.active ? "text-secondary" : "text-primary"}`}>
+                            {day.date}
+                          </p>
                         </div>
                       ))}
                     </div>
 
-                    <div className="relative col-span-7 grid grid-cols-7">
-                      <div className="pointer-events-none absolute inset-0 grid grid-rows-10">
-                        {Array.from({ length: 10 }).map((_, i) => (
-                          <div key={i} className="border-b border-outline-variant/5" />
-                        ))}
-                      </div>
+                    <div className="relative h-[500px] overflow-y-auto bg-white custom-scrollbar">
+                      <div className="grid h-[800px] grid-cols-8">
+                        <div className="sticky left-0 z-10 col-span-1 border-r border-outline-variant/5 bg-surface-container-lowest">
+                          {timeLabels.map((time) => (
+                            <div
+                              key={time}
+                              className="h-20 border-b border-outline-variant/5 px-2 py-1 text-right text-[9px] font-bold text-slate-400"
+                            >
+                              {time}
+                            </div>
+                          ))}
+                        </div>
 
-                      {planBlocks.length ? (
-                        planBlocks.map((block) => (
+                        <div className="relative col-span-7 grid grid-cols-7">
+                          <div className="pointer-events-none absolute inset-0 grid grid-rows-10">
+                            {Array.from({ length: 10 }).map((_, i) => (
+                              <div key={i} className="border-b border-outline-variant/5" />
+                            ))}
+                          </div>
+
+                          {planBlocks.length ? (
+                            planBlocks.map((block) => (
+                              <div
+                                key={block.id}
+                                className={`absolute rounded-r-lg p-2 shadow-sm ${block.tone.cardClass} ${block.tone.borderClass}`}
+                                style={{
+                                  left: `${block.dayIndex * (100 / 7) + block.lane * ((100 / 7) / block.totalLanes)}%`,
+                                  width: `${(100 / 7) / block.totalLanes - 0.5}%`,
+                                  top: `${(block.rowStart - 1) * 80 + 20}px`,
+                                  height: `${block.rowSpan * 80 - 12}px`
+                                }}
+                              >
+                                <p className={`text-[9px] font-black uppercase ${block.tone.titleClass}`}>{block.subject}</p>
+                                <p className="break-words text-xs font-bold leading-tight text-primary">{block.topic}</p>
+                                <p className="mt-2 text-[8px] font-semibold italic text-slate-500">{block.notes}</p>
+                              </div>
+                            ))
+                          ) : (
+                            <div className="absolute left-[12%] top-[120px] rounded-2xl border border-dashed border-outline-variant/30 bg-surface-container-low p-6 text-sm text-slate-500">
+                              No data available.
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="bg-white">
+                    <div className="grid grid-cols-7 border-b border-outline-variant/10 bg-surface-container-low/30">
+                      {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((label) => (
+                        <div key={label} className="border-r border-outline-variant/10 p-4 text-center last:border-r-0">
+                          <p className="text-[9px] font-bold uppercase text-slate-400">{label}</p>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="grid grid-cols-7 gap-px bg-outline-variant/10">
+                      {monthCells.length ? (
+                        monthCells.map((day) => (
                           <div
-                            key={block.id}
-                            className={`absolute rounded-r-lg p-2 shadow-sm ${block.tone.cardClass} ${block.tone.borderClass}`}
-                            style={{
-                              left: `${(block.dayIndex / 7) * 100}%`,
-                              width: `${100 / 7 - 1.2}%`,
-                              top: `${(block.rowStart - 1) * 80 + 20}px`,
-                              height: `${block.rowSpan * 80 - 12}px`
-                            }}
+                            key={`${day.weekday}-${day.date}-${day.monthLabel}`}
+                            className={`min-h-[150px] bg-white p-3 transition-colors ${day.inCurrentMonth ? "" : "bg-surface-container-low/60"} ${
+                              day.active ? "ring-2 ring-secondary/30 ring-inset" : ""
+                            }`}
                           >
-                            <p className={`text-[9px] font-black uppercase ${block.tone.titleClass}`}>{block.subject}</p>
-                            <p className="break-words text-xs font-bold leading-tight text-primary">{block.topic}</p>
-                            <p className="mt-2 text-[8px] font-semibold italic text-slate-500">{block.notes}</p>
+                            <div className="mb-2 flex items-start justify-between gap-2">
+                              <div>
+                                <p className={`text-[9px] font-bold uppercase ${day.inCurrentMonth ? "text-slate-400" : "text-slate-300"}`}>
+                                  {day.weekday}
+                                </p>
+                                <p className={`font-headline text-lg font-black ${day.inCurrentMonth ? "text-primary" : "text-slate-400"}`}>
+                                  {day.date}
+                                </p>
+                              </div>
+                              {!day.inCurrentMonth ? (
+                                <span className="rounded-full bg-surface-container px-2 py-0.5 text-[9px] font-bold uppercase text-slate-400">
+                                  {day.monthLabel}
+                                </span>
+                              ) : null}
+                            </div>
+
+                            <div className="space-y-2">
+                              {day.items.length ? (
+                                <>
+                                  {day.items.slice(0, 3).map((item, index) => {
+                                    const tone = getPlannerTone(item.type);
+                                    return (
+                                      <div
+                                        key={item.id ?? `${day.date}-${index}-${item.subject}`}
+                                        className={`rounded-xl border px-2 py-1 shadow-sm ${tone.cardClass} ${tone.borderClass}`}
+                                      >
+                                        <div className="flex items-center justify-between gap-2">
+                                          <p className={`text-[9px] font-black uppercase ${tone.titleClass}`}>{item.subject ?? "Study"}</p>
+                                          <p className="text-[9px] font-semibold text-slate-500">{formatTimeRange(item.startsAt, item.endsAt)}</p>
+                                        </div>
+                                        <p className="truncate text-[11px] font-semibold leading-tight text-primary">{item.topic ?? "Untitled block"}</p>
+                                      </div>
+                                    );
+                                  })}
+                                  {day.items.length > 3 ? (
+                                    <div className="rounded-xl border border-dashed border-outline-variant/25 bg-surface-container-low px-2 py-1 text-[10px] font-bold text-slate-500">
+                                      +{day.items.length - 3} more
+                                    </div>
+                                  ) : null}
+                                </>
+                              ) : (
+                                <div className="rounded-xl border border-dashed border-outline-variant/25 bg-surface-container-low px-2 py-3 text-center text-[10px] font-bold text-slate-400">
+                                  No data available.
+                                </div>
+                              )}
+                            </div>
                           </div>
                         ))
                       ) : (
-                        <div className="absolute left-[12%] top-[120px] rounded-2xl border border-dashed border-outline-variant/30 bg-surface-container-low p-6 text-sm text-slate-500">
-                          No data available.
-                        </div>
+                        <div className="col-span-7 p-6 text-sm text-slate-500">No data available.</div>
                       )}
                     </div>
                   </div>
-                </div>
+                )}
               </div>
             )}
           </div>
