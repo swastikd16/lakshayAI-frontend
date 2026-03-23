@@ -2,6 +2,7 @@
 import { get } from "../lib/apiClient";
 import { useAuth } from "../contexts/AuthContext";
 import StudyShell from "../components/StudyShell";
+import MathText from "../components/MathText";
 
 type ReviewScoreCard = {
   label?: string | null;
@@ -390,7 +391,7 @@ export default function AdaptiveReviewPage() {
                                     </span>
                                   </div>
 
-                                  <h3 className="mb-4 text-lg font-bold leading-snug text-primary sm:text-xl">{item.question ?? "No data available."}</h3>
+                                  <MathText as="h3" className="mb-4 text-lg font-bold leading-snug text-primary sm:text-xl" text={item.question ?? "No data available."} />
 
                                   {item.options?.length ? (
                                     <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -401,9 +402,11 @@ export default function AdaptiveReviewPage() {
                                             option.tone?.includes("error") ? "border-error/20 bg-error-container/20" : option.tone?.includes("green") ? "border-green-200 bg-green-50" : "border-slate-100 bg-surface"
                                           }`}
                                         >
-                                          <span className={`font-medium ${option.tone ?? "text-slate-500"}`}>
-                                            {option.label ?? String.fromCharCode(65 + optionIndex)}) {option.text ?? "No data available"}
-                                          </span>
+                                          <MathText
+                                            as="span"
+                                            className={`font-medium ${option.tone ?? "text-slate-500"}`}
+                                            text={`${option.label ?? String.fromCharCode(65 + optionIndex)}) ${option.text ?? "No data available"}`}
+                                          />
                                         </div>
                                       ))}
                                     </div>
@@ -413,7 +416,7 @@ export default function AdaptiveReviewPage() {
                                     </div>
                                   )}
 
-                                  {item.answer ? <p className="mt-3 text-sm text-slate-500">{item.answer}</p> : null}
+                                  {item.answer ? <MathText as="p" className="mt-3 text-sm text-slate-500" text={item.answer} /> : null}
                                 </div>
 
                                 <div className="flex shrink-0 gap-2 md:flex-col md:justify-end">

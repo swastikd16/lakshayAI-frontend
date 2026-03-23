@@ -1,5 +1,6 @@
 import { FormEvent, KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
 import StudyShell from "../components/StudyShell";
+import MathText from "../components/MathText";
 import { useAuth } from "../contexts/AuthContext";
 import { get, post, postWithMeta } from "../lib/apiClient";
 import type { DoubtMessageDto } from "../lib/apiTypes";
@@ -428,7 +429,7 @@ export default function DoubtSolverPage() {
                                 <p className="truncate text-[10px] text-white/60">Question sent from chat composer</p>
                               </div>
                             </div>
-                            <p className="break-words whitespace-pre-wrap text-sm leading-relaxed text-white/90 sm:text-[1.02rem]">{message.text}</p>
+                            <MathText as="p" className="break-words whitespace-pre-wrap text-sm leading-relaxed text-white/90 sm:text-[1.02rem]" text={message.text} />
                             {message.attachment ? (
                               <div className="mt-4 inline-flex max-w-full items-center gap-2 rounded-2xl border border-white/10 bg-white/10 px-3 py-2 text-left">
                                 <Icon name="image" className="text-[18px]" />
@@ -448,22 +449,22 @@ export default function DoubtSolverPage() {
                               <div className="min-w-0 flex-1">
                                 <div className="flex flex-wrap items-center gap-2"><p className="text-[10px] font-extrabold uppercase tracking-[0.28em] text-secondary">Answer based on verified sources</p><div className="h-px flex-1 bg-secondary/20" /></div>
                                 <h3 className="mt-2 truncate font-headline text-xl font-bold text-primary sm:text-2xl">{message.response?.title ?? "Step-by-step solution"}</h3>
-                                <p className="mt-3 max-w-4xl break-words text-sm leading-relaxed text-slate-600 sm:text-base">{message.response?.summary ?? message.text}</p>
+                                <MathText as="p" className="mt-3 max-w-4xl break-words text-sm leading-relaxed text-slate-600 sm:text-base" text={message.response?.summary ?? message.text} />
                               </div>
                             </div>
                             {message.response ? (
                               <div className="space-y-4">
                                 <section className="rounded-2xl border border-outline-variant/15 bg-surface-container-lowest p-4">
                                   <div className="mb-3 flex items-center gap-3"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-secondary/15 text-sm font-bold text-secondary">1</span><h4 className="min-w-0 truncate text-base font-bold text-primary">Explanation</h4></div>
-                                  <p className="break-words whitespace-pre-wrap text-sm leading-relaxed text-slate-600 sm:text-base">{message.response.summary}</p>
+                                  <MathText as="p" className="break-words whitespace-pre-wrap text-sm leading-relaxed text-slate-600 sm:text-base" text={message.response.summary} />
                                 </section>
                                 <section className="rounded-2xl border border-outline-variant/15 bg-surface-container-lowest p-4">
                                   <div className="mb-3 flex items-center gap-3"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-secondary/15 text-sm font-bold text-secondary">2</span><h4 className="min-w-0 truncate text-base font-bold text-primary">Numbered steps</h4></div>
-                                  <div className="space-y-3">{message.response.steps.map((step, index) => <div key={`${step.title}-${index}`} className="flex gap-3 rounded-2xl bg-surface-container-low px-4 py-3"><div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-secondary/10 text-xs font-black text-secondary">{index + 1}</div><div className="min-w-0"><h5 className="truncate text-sm font-bold text-primary">{step.title}</h5><p className="mt-1 break-words text-sm leading-relaxed text-slate-600">{step.body}</p></div></div>)}</div>
+                                  <div className="space-y-3">{message.response.steps.map((step, index) => <div key={`${step.title}-${index}`} className="flex gap-3 rounded-2xl bg-surface-container-low px-4 py-3"><div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-secondary/10 text-xs font-black text-secondary">{index + 1}</div><div className="min-w-0"><h5 className="truncate text-sm font-bold text-primary">{step.title}</h5><MathText as="p" className="mt-1 break-words text-sm leading-relaxed text-slate-600" text={step.body} /></div></div>)}</div>
                                 </section>
                                 <section className="rounded-2xl border border-outline-variant/15 bg-surface-container-lowest p-4">
                                   <div className="mb-3 flex items-center gap-3"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-secondary/15 text-sm font-bold text-secondary">3</span><h4 className="min-w-0 truncate text-base font-bold text-primary">Equation strip</h4></div>
-                                  <div className="grid gap-2 lg:grid-cols-2">{message.response.equations.map((eq) => <div key={eq} className="min-w-0 overflow-x-auto rounded-xl bg-[#F8F4FF] px-3 py-2 text-sm font-semibold text-primary shadow-sm"><span className="block min-w-0 whitespace-pre-wrap break-words font-mono">{eq}</span></div>)}</div>
+                                  <div className="grid gap-2 lg:grid-cols-2">{message.response.equations.map((eq) => <div key={eq} className="min-w-0 overflow-x-auto rounded-xl bg-[#F8F4FF] px-3 py-2 text-sm font-semibold text-primary shadow-sm"><MathText as="span" className="block min-w-0 whitespace-pre-wrap break-words font-mono" text={eq} /></div>)}</div>
                                 </section>
                                 <section className="rounded-2xl border border-outline-variant/15 bg-surface-container-lowest p-4">
                                   <div className="mb-3 flex items-center gap-3"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-secondary/15 text-sm font-bold text-secondary">4</span><h4 className="min-w-0 truncate text-base font-bold text-primary">Sources</h4></div>

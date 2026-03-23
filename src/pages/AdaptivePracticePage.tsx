@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { post } from "../lib/apiClient";
 import { useAuth } from "../contexts/AuthContext";
 import StudyShell from "../components/StudyShell";
+import MathText from "../components/MathText";
 
 type OptionId = "A" | "B" | "C" | "D";
 
@@ -639,7 +640,11 @@ export default function AdaptivePracticePage() {
 
                 <div className="flex gap-3 sm:gap-4">
                   <span className="font-headline text-5xl font-black leading-none text-slate-300 sm:text-6xl">{question?.number != null ? String(question.number).padStart(2, "0") : "--"}</span>
-                  <p className="max-w-5xl text-lg leading-relaxed text-on-surface sm:text-3xl">{question?.prompt ?? "Question prompt is unavailable for this session."}</p>
+                  <MathText
+                    as="p"
+                    className="max-w-5xl text-lg leading-relaxed text-on-surface sm:text-3xl"
+                    text={question?.prompt ?? "Question prompt is unavailable for this session."}
+                  />
                 </div>
 
                 <div className="relative overflow-hidden rounded-3xl border border-outline-variant/20 bg-surface-container-low px-6 py-10 sm:px-10 sm:py-14">
@@ -672,9 +677,11 @@ export default function AdaptivePracticePage() {
                         <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-sm font-black ${selectedOption === option.id && !hasFeedback ? "bg-secondary text-white" : hasFeedback && attemptFeedback?.correctOption === option.id ? "bg-green-600 text-white" : hasFeedback && attemptFeedback?.selectedOption === option.id && !attemptFeedback.isCorrect ? "bg-red-600 text-white" : "bg-surface-container text-primary/80"}`}>
                           {option.id}
                         </span>
-                        <span className="min-w-0 whitespace-normal break-words text-base font-semibold leading-snug text-primary sm:text-xl">
-                          {option.text || "Option text unavailable"}
-                        </span>
+                        <MathText
+                          as="span"
+                          className="min-w-0 whitespace-normal break-words text-base font-semibold leading-snug text-primary sm:text-xl"
+                          text={option.text || "Option text unavailable"}
+                        />
                       </div>
                       <Icon
                         name={hasFeedback ? (attemptFeedback?.correctOption === option.id ? "check_circle" : attemptFeedback?.selectedOption === option.id ? "cancel" : "radio_button_unchecked") : selectedOption === option.id ? "check_circle" : "radio_button_unchecked"}
@@ -711,12 +718,12 @@ export default function AdaptivePracticePage() {
                               <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-white">
                                 {index + 1}
                               </span>
-                              <p className="text-base leading-relaxed text-on-surface-variant">{step}</p>
+                              <MathText as="p" className="text-base leading-relaxed text-on-surface-variant" text={step} />
                             </li>
                           ))}
                         </ol>
                       ) : solvedFeedback.aiSolution ? (
-                        <p className="mt-3 whitespace-pre-line text-base leading-relaxed text-on-surface-variant">{solvedFeedback.aiSolution}</p>
+                        <MathText as="p" className="mt-3 whitespace-pre-line text-base leading-relaxed text-on-surface-variant" text={solvedFeedback.aiSolution} />
                       ) : (
                         <p className="mt-3 text-sm text-slate-500">No AI solution was returned for this attempt.</p>
                       )}
@@ -772,7 +779,7 @@ export default function AdaptivePracticePage() {
                   <p className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-700">
                     AI Hint{hintSource ? ` (${hintSource})` : ""}
                   </p>
-                  <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-amber-900">{hintText}</p>
+                  <MathText as="p" className="mt-2 whitespace-pre-line text-sm leading-relaxed text-amber-900" text={hintText} />
                 </section>
               ) : null}
 
@@ -795,12 +802,12 @@ export default function AdaptivePracticePage() {
                       {solvedFeedback.steps.map((step, index) => (
                         <li key={`${index}-${step}`} className="flex items-start gap-3">
                           <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-surface-container text-xs font-bold text-slate-500">{index + 1}</span>
-                          <p className="text-lg leading-relaxed text-on-surface-variant">{step}</p>
+                          <MathText as="p" className="text-lg leading-relaxed text-on-surface-variant" text={step} />
                         </li>
                       ))}
                     </ol>
                   ) : solvedFeedback.aiSolution ? (
-                    <p className="whitespace-pre-line text-lg leading-relaxed text-on-surface-variant">{solvedFeedback.aiSolution}</p>
+                    <MathText as="p" className="whitespace-pre-line text-lg leading-relaxed text-on-surface-variant" text={solvedFeedback.aiSolution} />
                   ) : (
                     <div className="rounded-2xl border border-dashed border-outline-variant/30 bg-surface-container-low p-5 text-sm text-slate-500">
                       No step-by-step solution was returned for this question.
