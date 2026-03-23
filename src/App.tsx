@@ -527,7 +527,7 @@ function LandingPage({
           </div>
           <div className="grid items-end gap-8 md:grid-cols-3">
             <article className="flex h-fit flex-col rounded-2xl border border-outline-variant/30 bg-white p-8">
-              <h3 className="mb-2 text-xl font-bold text-primary">Basic</h3>
+              <h3 className="mb-2 text-xl font-bold text-primary">FREE</h3>
               <div className="mb-6">
                 <span className="text-4xl font-black text-primary">Free</span>
               </div>
@@ -560,9 +560,9 @@ function LandingPage({
               <div className="absolute -top-4 left-1/2 -translate-x-1/2 rounded-full bg-secondary px-4 py-1 text-xs font-bold uppercase text-white">
                 Most Popular
               </div>
-              <h3 className="mb-2 text-xl font-bold text-primary">Pro</h3>
+              <h3 className="mb-2 text-xl font-bold text-primary">PLUS</h3>
               <div className="mb-6">
-                <span className="text-4xl font-black text-primary">$19</span>
+                <span className="text-4xl font-black text-primary">₹499</span>
                 <span className="text-on-surface-variant">/mo</span>
               </div>
               <ul className="mb-8 space-y-4 text-sm text-on-surface-variant">
@@ -597,9 +597,9 @@ function LandingPage({
             </article>
 
             <article className="flex h-fit flex-col rounded-2xl border border-outline-variant/30 bg-white p-8">
-              <h3 className="mb-2 text-xl font-bold text-primary">Elite</h3>
+              <h3 className="mb-2 text-xl font-bold text-primary">PRO</h3>
               <div className="mb-6">
-                <span className="text-4xl font-black text-primary">$49</span>
+                <span className="text-4xl font-black text-primary">₹999</span>
                 <span className="text-on-surface-variant">/mo</span>
               </div>
               <ul className="mb-8 space-y-4 text-sm text-on-surface-variant">
