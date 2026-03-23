@@ -10,6 +10,7 @@ type HistoryResponse = {
 
 type ProcessResponseMeta = {
   summarySource?: string;
+  flowchartSource?: string;
 };
 
 function Icon({ name, filled = false, className = "" }: { name: string; filled?: boolean; className?: string }) {
@@ -108,6 +109,7 @@ export default function VideoNotesPage() {
   const [url, setUrl] = useState("");
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
+  const [generatingFlowchart, setGeneratingFlowchart] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<MultimodalVideoNotesDto[]>([]);
   const [selected, setSelected] = useState<MultimodalVideoNotesDto | null>(null);
@@ -181,6 +183,34 @@ export default function VideoNotesPage() {
     }
   }
 
+  async function generateFlowchart() {
+    if (!accessToken || !selected?.id || !selected?.transcript?.trim()) {
+      return;
+    }
+
+    setGeneratingFlowchart(true);
+    setError(null);
+
+    try {
+      const response = await postWithMeta<MultimodalVideoNotesDto>(
+        `/multimodal/youtube/${encodeURIComponent(selected.id)}/flowchart`,
+        {},
+        accessToken
+      );
+
+      setSelected(response.data);
+      setHistory((current) => current.map((item) => (item.id === response.data.id ? response.data : item)));
+      setMeta({
+        summarySource: meta?.summarySource,
+        flowchartSource: typeof response.meta?.flowchartSource === "string" ? response.meta.flowchartSource : undefined
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to generate flowchart.");
+    } finally {
+      setGeneratingFlowchart(false);
+    }
+  }
+
   return (
     <StudyShell activePage="video-notes">
       <main className="min-h-screen pb-28 md:ml-64 md:pb-12">
@@ -230,6 +260,11 @@ export default function VideoNotesPage() {
                   Summary source: {meta.summarySource}
                 </span>
               ) : null}
+              {meta?.flowchartSource ? (
+                <span className="rounded-full bg-blue-100 px-3 py-1 font-semibold text-blue-700">
+                  Flowchart source: {meta.flowchartSource}
+                </span>
+              ) : null}
             </div>
           </form>
 
@@ -274,7 +309,22 @@ export default function VideoNotesPage() {
                 </article>
 
                 <article className="rounded-3xl border border-slate-100 bg-white p-5 shadow-sm">
-                  <h2 className="mb-3 font-headline text-xl font-bold text-primary">Flowchart (Mermaid)</h2>
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                    <h2 className="font-headline text-xl font-bold text-primary">Flowchart (Mermaid)</h2>
+                    <button
+                      type="button"
+                      onClick={() => void generateFlowchart()}
+                      disabled={!selected?.transcript?.trim() || generatingFlowchart || processing}
+                      className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2 text-xs font-bold text-white transition-colors hover:bg-primary-container disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <Icon name="graph_4" className="text-sm" />
+                      {generatingFlowchart
+                        ? "Generating..."
+                        : selected?.mermaidCode?.trim()
+                          ? "Regenerate Flowchart"
+                          : "Generate Flowchart"}
+                    </button>
+                  </div>
                   <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                     <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
                       <p className="mb-2 text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">Raw Markdown</p>
