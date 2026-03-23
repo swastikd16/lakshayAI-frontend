@@ -9,6 +9,7 @@ import OnboardingPage from "./pages/OnboardingPage";
 import ProfilePage from "./pages/ProfilePage";
 import RevisionPage from "./pages/RevisionPage";
 import StudyPlannerPage from "./pages/StudyPlannerPage";
+import VideoNotesPage from "./pages/VideoNotesPage";
 
 type AuthMode = "signin" | "signup";
 type RouteState =
@@ -24,6 +25,7 @@ type RouteState =
     }
   | { page: "planner" }
   | { page: "adaptive-practice" }
+  | { page: "video-notes" }
   | { page: "adaptive-review" }
   | { page: "doubt-solver" }
   | { page: "revision" }
@@ -59,6 +61,10 @@ function parseHash(hash: string): RouteState {
 
   if (normalizedHash.startsWith("#/adaptive-practice")) {
     return { page: "adaptive-practice" };
+  }
+
+  if (normalizedHash.startsWith("#/video-notes")) {
+    return { page: "video-notes" };
   }
 
   if (normalizedHash.startsWith("#/adaptive-review")) {
@@ -1134,6 +1140,7 @@ export default function App() {
     route.page === "dashboard" ||
     route.page === "planner" ||
     route.page === "adaptive-practice" ||
+    route.page === "video-notes" ||
     route.page === "adaptive-review" ||
     route.page === "doubt-solver" ||
     route.page === "revision" ||
@@ -1232,6 +1239,10 @@ export default function App() {
 
   if (route.page === "adaptive-practice") {
     return <AdaptivePracticePage />;
+  }
+
+  if (route.page === "video-notes") {
+    return <VideoNotesPage />;
   }
 
   if (route.page === "adaptive-review") {

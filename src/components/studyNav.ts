@@ -2,6 +2,7 @@ export type StudyRouteKey =
   | "dashboard"
   | "planner"
   | "adaptive-practice"
+  | "video-notes"
   | "doubt-solver"
   | "revision"
   | "analytics"
@@ -20,6 +21,7 @@ export const studyNavItems: StudyNavItem[] = [
   { key: "dashboard", label: "Dashboard", icon: "dashboard", href: "#/dashboard", mobile: true },
   { key: "planner", label: "Study Planner", icon: "calendar_today", href: "#/planner", mobile: true },
   { key: "adaptive-practice", label: "Adaptive Practice", icon: "fitness_center", href: "#/adaptive-practice", mobile: true },
+  { key: "video-notes", label: "Video Notes", icon: "play_lesson", href: "#/video-notes", mobile: true },
   { key: "doubt-solver", label: "Doubt Solver", icon: "quiz", href: "#/doubt-solver", mobile: true },
   { key: "revision", label: "Revision", icon: "history", href: "#/revision", mobile: false },
   { key: "analytics", label: "Analytics", icon: "insights", href: "#/analytics", mobile: true },

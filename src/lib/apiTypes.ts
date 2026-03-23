@@ -162,3 +162,25 @@ export type RevisionOverviewDto = Record<string, unknown> & {
 };
 export type AnalyticsSnapshotDto = Record<string, unknown>;
 export type ProfileSnapshotDto = Record<string, unknown>;
+export type MultimodalTranscriptMetaDto = {
+  language?: string | null;
+  source?: string | null;
+  segmentCount?: number;
+  transcriptLength?: number;
+};
+export type MultimodalVideoNotesDto = {
+  id: string;
+  youtubeUrl: string;
+  videoId: string;
+  videoTitle?: string | null;
+  transcript?: string;
+  transcriptSegments?: Array<{ text?: string; start?: number; duration?: number }>;
+  transcriptMeta?: MultimodalTranscriptMetaDto;
+  notesMarkdown: string;
+  conceptSummary: string;
+  mermaidCode: string;
+  keyTopics?: string[];
+  status?: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
